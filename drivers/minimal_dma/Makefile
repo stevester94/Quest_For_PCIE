@@ -1,5 +1,5 @@
 
-obj-m += pci_min.o
+obj-m += minimal_dma_driver.o
 
 all:
 		make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
