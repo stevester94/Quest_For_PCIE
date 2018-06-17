@@ -36,8 +36,12 @@ static struct file_operations fops = {
 
 static irqreturn_t irq_handler(int irq, void *dev)
 {
-    pr_info("irq_handler irq = %d dev = %d\n", irq, *(int *)dev);
+    //static unsigned int counter = 0;
+    //counter++;
+    //if(counter % 100 == 0)
+    	//pr_info("irq_handler irq = %u", counter);
     iowrite32(0, mmio + 4);
+    //iowrite32(0, mmio); // This makes the process repeat continuously!
     return IRQ_HANDLED;
 }
 
