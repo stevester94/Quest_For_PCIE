@@ -15,7 +15,7 @@ probe already does a mmio write, which generates an IRQ and tests everything.
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <asm/dma.h>
-#include <inttypes.h>
+// #include <inttypes.h>
 
 
 #define BAR 0
@@ -39,7 +39,7 @@ static struct file_operations fops = {
 
 // Before we are ready to handle interrupts, we need to setup our coherent DMA buffer
 #define DMA_SIZE 4096 // Transfers shall be of uint8_t
-#define NUM_TRANSFERS 10
+#define NUM_TRANSFERS 256000
 static dma_addr_t dma_addr_for_device; // This is the address that the device will use
 static void* dma_addr_for_kernel; // This is a virtual address, used by kernel to access the buffer
 static int flags = GFP_KERNEL;
@@ -79,14 +79,11 @@ int dma_is_done(int channel)
 
 static irqreturn_t irq_handler(int irq, void *dev)
 {
-    pr_info("irq_handler\n");
     int i;
     uint8_t* temp = dma_addr_for_kernel;
 
-    // if(!dma_is_done(DMA_CHANNEL_NUM))
-    // {
-    //     pr_info("DMA is not done!");
-    // }
+    // dma_is_done(DMA_CHANNEL_NUM);
+    // pr_info("irq_handler: %d\n", (int)temp[0]);
 
     for(i = 0; i < DMA_SIZE; i++)
     {
@@ -96,11 +93,14 @@ static irqreturn_t irq_handler(int irq, void *dev)
     transfers_remaining--;
 
     if(transfers_remaining > 0)
+    {
+        // pr_info("interrupt handled\n");
         iowrite32(0, mmio + 0x0); // Signal that we have handled the DMA buffer, and are ready for another
+    }
     else
     {
-        iowrite32(0, mmio + 0x3); // Signal we have handled the DMA, but we are done
-        pr_info("checksum: %"PRIu64"\n", checksum);
+        iowrite32(0, mmio + 12); // Signal we have handled the DMA, but we are done
+        pr_info("checksum: %llu\n", checksum);
     }
     return IRQ_HANDLED;
 }
@@ -130,10 +130,12 @@ static int probe(struct pci_dev *dev, const struct pci_device_id *id)
         pr_info("Error setting mask!\n");
     }
 
-    pci_set_master(dev); // Per some stack overflow guy, looks like it works!
-    dma_addr_for_kernel = dma_alloc_coherent(&dev->dev, size_buffer, &dma_addr_for_device, flags);
+    checksum = 0;
+    transfers_remaining = NUM_TRANSFERS;
 
-    pr_info("dma_addr_for_device: %u\n", (uint32_t)dma_addr_for_device);
+    pci_set_master(dev); // Per some stack overflow guy, looks like it works!
+    dma_addr_for_kernel = dma_alloc_coherent(&dev->dev, DMA_SIZE, &dma_addr_for_device, flags);
+
 
     dma_prepare(DMA_CHANNEL_NUM, DMA_MODE_READ, dma_addr_for_device, DMA_SIZE); // Question is do we need to call this guy each time
 
@@ -141,8 +143,17 @@ static int probe(struct pci_dev *dev, const struct pci_device_id *id)
         dev_err(&(dev->dev), "request_irq\n");
         goto error;
     }
-    iowrite32(dma_addr_for_device, mmio+0x1); // initialize device with DMA address
-    iowrite32(NUM_TRANSFERS, mmio+0x2);
+    pr_info("dma_addr_for_device: %u\n", (uint32_t)dma_addr_for_device);
+    iowrite32(dma_addr_for_device, mmio+4); // initialize device with DMA address
+
+    pr_info("NUM_TRANSFERS: %d\n", NUM_TRANSFERS);
+    iowrite32(NUM_TRANSFERS, mmio+8);
+
+    // Find out wtf is happening
+    // iowrite32(1, mmio+0);
+    // iowrite32(2, mmio+4);
+    // iowrite32(3, mmio+8);
+    // iowrite32(4, mmio+12);
 
     return 0;
 error:
@@ -152,7 +163,7 @@ error:
 static void remove(struct pci_dev *dev)
 {
     pr_info("remove\n");
-    dma_free_coherent(&dev->dev, size_buffer, dma_addr_for_kernel, dma_addr_for_device);
+    dma_free_coherent(&dev->dev, DMA_SIZE, dma_addr_for_kernel, dma_addr_for_device);
     free_irq(dev->irq, &major);
     pci_release_region(dev, BAR);
     unregister_chrdev(major, CDEV_NAME);

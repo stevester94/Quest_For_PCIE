@@ -29,11 +29,13 @@ static void write_to_dma(State* state)
     int i;
     uint8_t buffer[DMA_SIZE];
     uint8_t random = rand() % 0xFF;
+    num_transfers--;
     for(i = 0; i < DMA_SIZE; i++)
     {
         buffer[i] = random;
         checksum += random;
     }
+    // printf("Writing to DMA: %d\n", (int)random);
     pci_dma_write(&state->pdev, dma_address & dma_mask, buffer, DMA_SIZE);
 }
 
@@ -44,7 +46,7 @@ static void mmio_write(void *opaque, hwaddr addr, uint64_t val,
 
     switch (addr) {
 
-        case 0x0: // Indicates from host machine that DMA has been handled (copied or whatever), ready for next one
+        case 0: // Indicates from host machine that DMA has been handled (copied or whatever), ready for next one
             pci_set_irq(&state->pdev, 0);
             if(num_transfers < 0)
             {
@@ -53,19 +55,21 @@ static void mmio_write(void *opaque, hwaddr addr, uint64_t val,
             if(num_transfers > 0)
             {
                 write_to_dma(state);
-                num_transfers--;
                 pci_set_irq(&state->pdev, 1);
             }
         break;
-        case 0x1: // This will be the DMA address
+        case 4: // This will be the DMA address
             dma_address = (dma_addr_t)val;
+            printf("dma_address: %d\n", (uint32_t)(dma_address & dma_mask));
         break;
-        case 0x2: // This will indicate how many DMAs we are going to attempt, will immediately kick off
+        case 8: // This will indicate how many DMAs we are going to attempt, will immediately kick off
+            checksum = 0;
             num_transfers = val;
+            printf("Going for %d transfers\n", num_transfers);
             write_to_dma(state);
             pci_set_irq(&state->pdev, 1); // Indicate DMA is complete, ready to be handled
         break;
-        case 0x3: // This indicates the host is done with DMA, we should be as well, verify
+        case 12: // This indicates the host is done with DMA, we should be as well, verify
             pci_set_irq(&state->pdev, 0);
             if(num_transfers != 0)
             {
@@ -75,6 +79,12 @@ static void mmio_write(void *opaque, hwaddr addr, uint64_t val,
         break;
     }
 }
+
+// static void mmio_write(void *opaque, hwaddr addr, uint64_t val,
+//         unsigned size)
+// {
+//     printf("Addr: %d Val: %"PRIu64"\n", (int)addr, val);
+// }
 
 static const MemoryRegionOps mmio_ops = {
     .read = mmio_read,
@@ -88,7 +98,7 @@ static void realize(PCIDevice *pdev, Error **errp)
 
     pci_config_set_interrupt_pin(pdev->config, 1);
     memory_region_init_io(&state->mmio, OBJECT(state), &mmio_ops, state,
-            DEVICE_NAME, 8);
+            DEVICE_NAME, 1 << 20);
     pci_register_bar(pdev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &state->mmio);
 }
 
