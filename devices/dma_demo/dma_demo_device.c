@@ -26,15 +26,15 @@ static uint64_t mmio_read(void *opaque, hwaddr addr, unsigned size)
 
 static void write_to_dma(State* state)
 {
-    int i;
+    // int i;
     uint8_t buffer[DMA_SIZE];
-    uint8_t random = rand() % 0xFF;
+    // uint8_t random = rand() % 0xFF;
     num_transfers--;
-    for(i = 0; i < DMA_SIZE; i++)
-    {
-        buffer[i] = random;
-        checksum += random;
-    }
+    // for(i = 0; i < DMA_SIZE; i++)
+    // {
+    //     buffer[i] = 12;
+    //     // checksum += random;
+    // }
     // printf("Writing to DMA: %d\n", (int)random);
     pci_dma_write(&state->pdev, dma_address & dma_mask, buffer, DMA_SIZE);
 }
