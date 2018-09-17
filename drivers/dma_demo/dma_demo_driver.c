@@ -58,7 +58,8 @@ u64 get_epoch_ms(void)
     //spec = current_kernel_time();
     getnstimeofday(&spec);
 
-    ms = spec.tv_sec*1000 + spec.tv_nsec/1000;
+    // ms = spec.tv_sec*1000 + spec.tv_nsec/1000;
+    ms = spec.tv_sec*1000; // Qemu was having some weirdness with nsec, stick with sec granularity
 
     return ms;
 }
@@ -96,6 +97,7 @@ static irqreturn_t irq_handler(int irq, void *dev)
 {
     int i;
     uint8_t* temp = dma_addr_for_kernel;
+    int num_bytes_transferred;
     static u64 time_of_last_handle = 0; 
     u64 epoch_time;
 
@@ -133,6 +135,10 @@ static irqreturn_t irq_handler(int irq, void *dev)
         pr_info("Start time: %llu\n", start_time);
         pr_info("End time: %llu\n", end_time);
         pr_info("Elapsed time: %llu\n", end_time - start_time);
+        num_bytes_transferred = NUM_TRANSFERS * DMA_SIZE;
+        pr_info("total bytes transferred: %d\n", num_bytes_transferred);
+        pr_info("Apparent data rate: %d MBytes/sec\n", ( num_bytes_transferred / (end_time-start_time))*1000/1024/1024);
+
     }
     return IRQ_HANDLED;
 }
