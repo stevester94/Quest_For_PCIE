@@ -15,7 +15,8 @@ probe already does a mmio write, which generates an IRQ and tests everything.
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <asm/dma.h>
-// #include <inttypes.h>
+
+//#include <inttypes.h> // Apparently not usable in kernel...
 
 
 #define BAR 0
@@ -46,7 +47,21 @@ static int flags = GFP_KERNEL;
 #define DMA_CHANNEL_NUM 0 // Abitrary I guess???
 static uint64_t checksum = 0;
 static int transfers_remaining = NUM_TRANSFERS;
+static uint64_t start_time;
+static uint64_t end_time;
 
+u64 get_epoch_ms(void)
+{
+    uint64_t            ms; // Milliseconds
+    struct timespec spec;
+
+    //spec = current_kernel_time();
+    getnstimeofday(&spec);
+
+    ms = spec.tv_sec*1000 + spec.tv_nsec/1000;
+
+    return ms;
+}
 
 // Idk about channel, just go for it
 //DMA_MODE_WRITE, DMA_MODE_READ
@@ -81,9 +96,22 @@ static irqreturn_t irq_handler(int irq, void *dev)
 {
     int i;
     uint8_t* temp = dma_addr_for_kernel;
+    static u64 time_of_last_handle = 0; 
+    u64 epoch_time;
 
     // dma_is_done(DMA_CHANNEL_NUM);
     // pr_info("irq_handler: %d\n", (int)temp[0]);
+    epoch_time = get_epoch_ms();
+    if(time_of_last_handle != epoch_time)
+    {
+        pr_info("Time of irq_handle: %llu\n", epoch_time);
+        if(time_of_last_handle > epoch_time)
+        {
+            pr_info("Time glitch detected\n");
+        }
+
+        time_of_last_handle =  epoch_time;
+    }
 
     for(i = 0; i < DMA_SIZE; i++)
     {
@@ -101,6 +129,10 @@ static irqreturn_t irq_handler(int irq, void *dev)
     {
         iowrite32(0, mmio + 12); // Signal we have handled the DMA, but we are done
         pr_info("checksum: %llu\n", checksum);
+        end_time = get_epoch_ms();
+        pr_info("Start time: %llu\n", start_time);
+        pr_info("End time: %llu\n", end_time);
+        pr_info("Elapsed time: %llu\n", end_time - start_time);
     }
     return IRQ_HANDLED;
 }
@@ -137,6 +169,7 @@ static int probe(struct pci_dev *dev, const struct pci_device_id *id)
     dma_addr_for_kernel = dma_alloc_coherent(&dev->dev, DMA_SIZE, &dma_addr_for_device, flags);
 
 
+    start_time = get_epoch_ms(); // Close enough
     dma_prepare(DMA_CHANNEL_NUM, DMA_MODE_READ, dma_addr_for_device, DMA_SIZE); // Question is do we need to call this guy each time
 
     if (request_irq(dev->irq, irq_handler, IRQF_SHARED, "pci_irq_handler0", &major) < 0) {

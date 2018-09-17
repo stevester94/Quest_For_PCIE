@@ -17,6 +17,8 @@ static uint64_t dma_mask = 0xFFFFFFF;
 static int num_transfers = -1;
 static uint64_t checksum = 0;
 
+static uint64_t start_time, end_time;
+
 static uint64_t mmio_read(void *opaque, hwaddr addr, unsigned size)
 {
     printf(DEVICE_NAME " mmio_read addr = %llx size = %x", (unsigned long long)addr, size);
@@ -26,19 +28,30 @@ static uint64_t mmio_read(void *opaque, hwaddr addr, unsigned size)
 
 static void write_to_dma(State* state)
 {
-    // int i;
+    int i;
     uint8_t buffer[DMA_SIZE];
-    // uint8_t random = rand() % 0xFF;
+    uint8_t random = rand() % 0xFF;
     num_transfers--;
-    // for(i = 0; i < DMA_SIZE; i++)
-    // {
-    //     buffer[i] = 12;
-    //     // checksum += random;
-    // }
+    for(i = 0; i < DMA_SIZE; i++)
+    {
+        buffer[i] = random;
+        checksum += random;
+    }
     // printf("Writing to DMA: %d\n", (int)random);
     pci_dma_write(&state->pdev, dma_address & dma_mask, buffer, DMA_SIZE);
 }
+static uint64_t get_epoch_ms()
+{
+    uint64_t            ms; // Milliseconds
+    time_t          s;  // Seconds
+    struct timespec spec;
 
+    clock_gettime(CLOCK_REALTIME, &spec);
+
+    ms = spec.tv_sec * 1000;
+
+    return ms;
+}
 static void mmio_write(void *opaque, hwaddr addr, uint64_t val,
         unsigned size)
 {
@@ -62,10 +75,14 @@ static void mmio_write(void *opaque, hwaddr addr, uint64_t val,
             dma_address = (dma_addr_t)val;
             printf("dma_address: %d\n", (uint32_t)(dma_address & dma_mask));
         break;
-        case 8: // This will indicate how many DMAs we are going to attempt, will immediately kick off
+        case 8: 
+            // This will indicate how many DMAs we are going to attempt
+            // It will also trigger the first dma write
+            // subsequent writes will be made once we get the ack (case 0)
             checksum = 0;
             num_transfers = val;
-            printf("Going for %d transfers\n", num_transfers);
+            printf("Attempting %d transfers\n", num_transfers);
+            start_time =  get_epoch_ms();
             write_to_dma(state);
             pci_set_irq(&state->pdev, 1); // Indicate DMA is complete, ready to be handled
         break;
@@ -76,6 +93,9 @@ static void mmio_write(void *opaque, hwaddr addr, uint64_t val,
                 printf("We should be done, but have %d transfers remaing\n", num_transfers);
             }
             printf("checksum: %"PRIu64"\n", checksum);
+            end_time = get_epoch_ms();
+            printf("Done at %" PRIu64 "\n", end_time);
+            printf("Effective data rate: %f Bytes/sec\n", ((float)num_transfers)*DMA_SIZE / ((end_time-start_time)/1000));
         break;
     }
 }
